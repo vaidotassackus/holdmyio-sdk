@@ -1,0 +1,8 @@
+.build/
+.swiftpm/
+sdk-android/.gradle/
+sdk-android/build/
+sdk-android/holdmyio/build/
+sdk-android/local.properties
+sdk-android/dist/
+node_modules/
