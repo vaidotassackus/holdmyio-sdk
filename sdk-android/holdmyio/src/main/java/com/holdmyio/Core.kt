@@ -12,8 +12,8 @@ import kotlin.math.min
 import kotlin.math.pow
 
 /**
- * Eilė, sesijos, saugojimas diske ir siuntimas. Visa būsena keičiama tik `executor` gijoje
- * (kaip Swift SDK serijinė eilė). Jokių Android klasių: testuojama paprastoje JVM.
+ * Queue, sessions, disk persistence and sending. All state is mutated only on the `executor` thread
+ * (like the Swift SDK serial queue). No Android classes: tested on a plain JVM.
  */
 internal class Core(
     private val appKey: String,
@@ -22,10 +22,10 @@ internal class Core(
     private val debug: Boolean,
     private val stateFile: File,
     private val deviceContext: () -> DeviceContext,
-    /** Išsiunčia JSON kūną ir grąžina HTTP statusą (null, jei tinklo klaida). */
+    /** Sends the JSON body and returns the HTTP status (null on a network error). */
     private val transport: (url: String, appKey: String, body: String) -> Int?,
     private val now: () -> Long = System::currentTimeMillis,
-    /** Kur vykdomas tinklo kvietimas (testuose iškart, toje pačioje gijoje). */
+    /** Where the network call runs (in tests: immediately, on the same thread). */
     private val background: (() -> Unit) -> Unit = { task -> Thread(task, "holdmyio-send").apply { isDaemon = true }.start() },
     private val executor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor { r ->
         Thread(r, "holdmyio").apply { isDaemon = true }
@@ -51,19 +51,19 @@ internal class Core(
 
     fun start() {
         async {
-            persistNow() // kad įdiegimo ID išliktų net jei appsas iškart uždaromas
+            persistNow() // so the install ID survives even if the app is closed right away
             timer = executor.scheduleWithFixedDelay(
                 { runSafely { flushLocked() } },
                 options.flushIntervalMs, options.flushIntervalMs, TimeUnit.MILLISECONDS,
             )
-            flushLocked() // išsiunčiam tai, kas liko nuo praeito karto
+            flushLocked() // send whatever is left from the previous run
         }
     }
 
-    // --- Įvykiai
+    // --- Events
 
     fun record(name: String, props: Map<String, Any> = emptyMap(), revenue: Revenue? = null, setScreen: String? = null) {
-        val at = now() // laikas fiksuojamas kvietimo momentu, ne kai ateina eilė
+        val at = now() // timestamp is taken at call time, not when the queue gets to it
         async {
             if (!state.enabled) return@async
             if (setScreen != null) currentScreen = setScreen
@@ -75,7 +75,7 @@ internal class Core(
     private fun makeEvent(name: String, at: Long, props: Map<String, Any> = emptyMap(), revenue: Revenue? = null) =
         Event(UUID.randomUUID().toString(), name, at, sessionId, currentScreen, props, revenue)
 
-    /** Nauja sesija prasideda po `sessionTimeoutMs` neveiklumo. */
+    /** A new session starts after `sessionTimeoutMs` of inactivity. */
     private fun touchSession(at: Long) {
         if (sessionId.isNotEmpty() && at - lastActivity < options.sessionTimeoutMs) {
             lastActivity = at
@@ -89,12 +89,12 @@ internal class Core(
     private fun append(event: Event) {
         state.queue += event
         val overflow = state.queue.size - options.maxQueueSize
-        if (overflow > 0) repeat(overflow) { state.queue.removeAt(0) } // seniausi išmetami pirmi
+        if (overflow > 0) repeat(overflow) { state.queue.removeAt(0) } // oldest are dropped first
         schedulePersist()
         if (state.queue.size >= options.flushAt) flushLocked()
     }
 
-    // --- Siuntimas
+    // --- Sending
 
     fun flush(force: Boolean = false) {
         async {
@@ -109,12 +109,12 @@ internal class Core(
         val batch = state.queue.take(options.batchSize)
         val ids = batch.map { it.id }.toSet()
         val body = runCatching { batchJson(batch) }.getOrElse {
-            state.queue.removeAll { it.id in ids } // neužkoduojamas paketas niekada nepavyks
+            state.queue.removeAll { it.id in ids } // a batch that cannot be encoded will never succeed
             return
         }
 
         sending = true
-        // Tinklas ne šioje gijoje, kad eilė nelauktų; atsakymas grįžta į ją.
+        // Network runs off this thread so the queue does not wait; the response comes back to it.
         background {
             val code = runCatching { transport("${endpoint.trimEnd('/')}/v1/events", appKey, body) }.getOrNull() ?: 0
             async { onSent(ids, code) }
@@ -130,14 +130,14 @@ internal class Core(
             failures = 0
             retryAfter = 0
             persistNow()
-            flushLocked() // jei eilėje liko daugiau nei vienas paketas
+            flushLocked() // in case more than one batch is queued
         } else {
-            // Tinklo ar serverio klaida: paliekam eilėje, laukiam ilgiau su kiekvienu bandymu.
-            // Serveris dublikatus pašalina pagal įvykio id.
+            // Network or server error: keep in the queue, wait longer after each attempt.
+            // The server removes duplicates by event id.
             failures += 1
             val delaySec = min(3600.0, 30.0 * 2.0.pow(failures - 1))
             retryAfter = now() + (delaySec * 1000).toLong()
-            persistNow() // neišsiųsti įvykiai turi išlikti, net jei appsas tuoj nulūš
+            persistNow() // unsent events must survive even if the app crashes right after
         }
     }
 
@@ -159,7 +159,7 @@ internal class Core(
         }.toString()
     }
 
-    // --- Išjungimas
+    // --- Opt-out
 
     fun setEnabled(enabled: Boolean) {
         async {
@@ -171,7 +171,7 @@ internal class Core(
 
     val isEnabled: Boolean get() = executor.submit<Boolean> { state.enabled }.get()
 
-    // --- Diskas
+    // --- Disk
 
     private fun schedulePersist() {
         if (persistScheduled) return
@@ -188,25 +188,25 @@ internal class Core(
                 stateFile.delete()
                 tmp.renameTo(stateFile)
             }
-        } // Analitika niekada neturi nulaužti appso; kitą kartą bandysim vėl
+        } // Analytics must never crash the app; we will try again next time
     }
 
-    // --- Pagalbinės
+    // --- Helpers
 
     private fun async(block: () -> Unit) {
         runCatching { executor.execute { runSafely(block) } }
     }
 
     private inline fun runSafely(block: () -> Unit) {
-        try { block() } catch (_: Throwable) { /* SDK klaidos nuryjamos tyliai */ }
+        try { block() } catch (_: Throwable) { /* SDK errors are swallowed silently */ }
     }
 
-    // --- Testams
+    // --- For tests
 
     internal val queuedEvents: List<Event> get() = executor.submit<List<Event>> { state.queue.toList() }.get()
     internal val installId: String get() = executor.submit<String> { state.installId }.get()
 
-    /** Palaukia, kol eilė apdoros viską, kas jau įdėta. */
+    /** Waits until the queue has processed everything already submitted. */
     internal fun drain() { executor.submit {}.get() }
 
     internal fun shutdown() {

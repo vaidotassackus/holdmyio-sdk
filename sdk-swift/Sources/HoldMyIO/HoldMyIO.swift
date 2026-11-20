@@ -1,26 +1,26 @@
 import Foundation
 
-/// Viešas SDK API.
+/// Public SDK API.
 ///
 ///     HoldMyIO.configure(appKey: "pk_live_...", endpoint: URL(string: "https://in.example.com")!)
 ///     HoldMyIO.screen("editor")
 ///     HoldMyIO.track("export_done", props: ["format": "reel", "seconds": 42])
 ///
-/// Automatiškai siunčiami `session_start` ir `app_open`. Įvykiai kaupiami diske ir
-/// siunčiami paketais, todėl veikia ir be interneto.
+/// `session_start` and `app_open` are sent automatically. Events are stored on disk and
+/// sent in batches, so it works offline too.
 public enum HoldMyIO {
     public struct Options: Sendable {
-        /// Kas kiek sekundžių bandoma išsiųsti eilę.
+        /// How often (in seconds) to try sending the queue.
         public var flushInterval: TimeInterval = 30
-        /// Eilėje susikaupus tiek įvykių, siunčiama iškart.
+        /// Once this many events are queued, they are sent immediately.
         public var flushAt = 20
-        /// Įvykių skaičius viename pakete (serveris priima iki 100).
+        /// Number of events per batch (the server accepts up to 100).
         public var batchSize = 50
-        /// Daugiausia įvykių, laikomų diske be interneto.
+        /// Maximum number of events kept on disk while offline.
         public var maxQueueSize = 1000
-        /// Po tiek sekundžių neveiklumo pradedama nauja sesija.
+        /// A new session starts after this many seconds of inactivity.
         public var sessionTimeout: TimeInterval = 30 * 60
-        /// Debug buildų įvykiai pažymimi ir į statistiką neįtraukiami.
+        /// Events from debug builds are flagged and excluded from statistics.
         public var debug: Bool = {
             #if DEBUG
             return true
@@ -41,7 +41,7 @@ public enum HoldMyIO {
         return core
     }
 
-    /// Kviesk vieną kartą paleidžiant appsą (pvz. `App.init()`), prieš kitus kvietimus.
+    /// Call once at app launch (e.g. `App.init()`), before any other calls.
     public static func configure(appKey: String, endpoint: URL, options: Options = Options()) {
         lock.lock()
         defer { lock.unlock() }
@@ -51,17 +51,17 @@ public enum HoldMyIO {
         created.start()
     }
 
-    /// Bet koks įvykis. Pavadinimas: raidės, skaičiai, `_` ir `.`, iki 64 simbolių.
+    /// Any event. Name: letters, digits, `_` and `.`, up to 64 characters.
     public static func track(_ name: String, props: [String: MetricValue] = [:]) {
         current?.record(name: name, props: props)
     }
 
-    /// Ekrano peržiūra. Vėlesni įvykiai priskiriami šiam ekranui, kol nepakviesi su kitu.
+    /// A screen view. Later events are attributed to this screen until you call it with another.
     public static func screen(_ name: String, props: [String: MetricValue] = [:]) {
         current?.record(name: "screen_view", props: props, setScreen: name)
     }
 
-    /// Pirkimas. `currency` yra ISO 4217 kodas, pvz. "EUR".
+    /// A purchase. `currency` is an ISO 4217 code, e.g. "EUR".
     public static func purchase(
         productId: String, price: Decimal, currency: String, props: [String: MetricValue] = [:]
     ) {
@@ -73,12 +73,12 @@ public enum HoldMyIO {
         current?.record(name: "purchase", props: props, revenue: revenue)
     }
 
-    /// Išsiunčia eilę dabar, nelaukiant laikmačio.
+    /// Sends the queue now, without waiting for the timer.
     public static func flush() {
         current?.flush(force: true)
     }
 
-    /// Naudotojo atsisakymas: išjungus nieko nerenkama, o neišsiųsti įvykiai ištrinami.
+    /// User opt-out: when disabled nothing is collected and unsent events are deleted.
     public static func setEnabled(_ enabled: Bool) {
         current?.setEnabled(enabled)
     }

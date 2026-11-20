@@ -1,7 +1,7 @@
 import Foundation
 
-/// Įvykio savybės reikšmė: tekstas, skaičius arba bool.
-/// Galima rašyti tiesiog literalais: `["source": "push", "count": 3, "first": true]`.
+/// An event property value: string, number or bool.
+/// You can simply use literals: `["source": "push", "count": 3, "first": true]`.
 public enum MetricValue: Codable, Equatable, Sendable,
     ExpressibleByStringInterpolation, ExpressibleByIntegerLiteral,
     ExpressibleByFloatLiteral, ExpressibleByBooleanLiteral
@@ -54,7 +54,7 @@ struct Revenue: Codable, Equatable {
 struct Event: Codable, Equatable {
     let id: String
     let name: String
-    /// Milisekundės nuo 1970-01-01 UTC
+    /// Milliseconds since 1970-01-01 UTC
     let ts: Int64
     let sessionId: String
     let screen: String
@@ -93,7 +93,7 @@ struct Batch: Encodable {
     let events: [Event]
 }
 
-/// Tai, kas išlieka diske tarp paleidimų.
+/// What persists on disk between launches.
 struct PersistedState: Codable {
     var installId: String
     var enabled: Bool

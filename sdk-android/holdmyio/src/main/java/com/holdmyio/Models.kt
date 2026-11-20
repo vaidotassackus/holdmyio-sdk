@@ -3,14 +3,14 @@ package com.holdmyio
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Pirkimas įvykyje. `amount` yra kaina, kurią sumokėjo pirkėjas, `currency` ISO 4217 kodas. */
+/** Purchase attached to an event. `amount` is the price the buyer paid, `currency` an ISO 4217 code. */
 internal data class Revenue(val amount: Double, val currency: String, val productId: String)
 
-/** Vienas įvykis, toks, koks keliauja į `/v1/events` (laukai kaip Swift SDK). */
+/** A single event, as sent to `/v1/events` (same fields as the Swift SDK). */
 internal data class Event(
     val id: String,
     val name: String,
-    /** Milisekundės nuo 1970-01-01 UTC. */
+    /** Milliseconds since 1970-01-01 UTC. */
     val ts: Long,
     val sessionId: String,
     val screen: String,
@@ -53,7 +53,7 @@ internal data class Event(
     }
 }
 
-/** Įrenginio ir appso kontekstas, siunčiamas su kiekvienu paketu. */
+/** Device and app context, sent with every batch. */
 internal data class DeviceContext(
     val appVersion: String,
     val build: String,
@@ -63,7 +63,7 @@ internal data class DeviceContext(
     val locale: String,
 )
 
-/** Tai, kas išlieka diske tarp paleidimų. */
+/** What persists on disk between launches. */
 internal data class PersistedState(
     val installId: String,
     var enabled: Boolean,
@@ -87,7 +87,7 @@ internal data class PersistedState(
     }
 }
 
-/** Leidžiamos savybių reikšmės: tekstas, skaičius, bool. Kita atmetama. */
+/** Allowed property values: string, number, bool. Anything else is dropped. */
 internal fun cleanProps(props: Map<String, Any?>): Map<String, Any> =
     props.mapNotNull { (k, v) ->
         when (v) {

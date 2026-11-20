@@ -13,7 +13,7 @@ final class CoreTests: XCTestCase {
         try? FileManager.default.removeItem(at: directory)
     }
 
-    /// Netikras tinklas: įsimena užklausas ir atsako nurodytu statusu.
+    /// Fake network: records requests and responds with the given status.
     private final class FakeNetwork: @unchecked Sendable {
         var status: Int? = 202
         private(set) var requests: [URLRequest] = []
@@ -31,7 +31,7 @@ final class CoreTests: XCTestCase {
 
     private func makeCore(_ network: FakeNetwork, now: @escaping () -> Date = Date.init) -> Core {
         var options = HoldMyIO.Options()
-        options.flushAt = 1000 // testuose siunčiam tik rankiniu flush
+        options.flushAt = 1000 // tests send only via manual flush
         return Core(
             appKey: "pk_test_0123456789abcdef",
             endpoint: URL(string: "https://in.example.com")!,
@@ -42,7 +42,7 @@ final class CoreTests: XCTestCase {
         )
     }
 
-    /// Flush atsakymas grįžta per tą pačią eilę, todėl laukiam du kartus.
+    /// The flush response comes back through the same queue, so we wait twice.
     private func settle(_ core: Core) {
         core.drain()
         core.drain()
@@ -86,7 +86,7 @@ final class CoreTests: XCTestCase {
 
     func testFailureKeepsEventsAndSurvivesRestart() {
         let network = FakeNetwork()
-        network.status = nil // nėra interneto
+        network.status = nil // no internet
         let first = makeCore(network)
         first.record(name: "app_open")
         first.flush()
@@ -131,17 +131,17 @@ final class CoreTests: XCTestCase {
 
     func testAppOpenOnlyOnLaunchAndReturnFromBackground() {
         let core = makeCore(FakeNetwork())
-        core.appDidBecomeActive()      // paleidimas
-        core.appDidBecomeActive()      // uždarytas leidimų langas: ne atidarymas
-        core.appWillEnterForeground()  // grįžo iš fono
-        core.appDidBecomeActive()      // po jo visada ateina ir šis
+        core.appDidBecomeActive()      // launch
+        core.appDidBecomeActive()      // permission dialog dismissed: not an open
+        core.appWillEnterForeground()  // returned from background
+        core.appDidBecomeActive()      // this one always follows it
         core.drain()
         XCTAssertEqual(core.queuedEvents.map(\.name).filter { $0 == "app_open" }.count, 2)
     }
 
     func testAppOpenOnceWhenLaunchedInBackgroundThenOpened() {
         let core = makeCore(FakeNetwork())
-        core.appWillEnterForeground()  // paleistas fone (atsisiuntimas), dabar atidarytas
+        core.appWillEnterForeground()  // launched in background (fetch), now opened
         core.appDidBecomeActive()
         core.drain()
         XCTAssertEqual(core.queuedEvents.map(\.name).filter { $0 == "app_open" }.count, 1)

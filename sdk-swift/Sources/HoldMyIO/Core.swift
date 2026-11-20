@@ -3,9 +3,9 @@ import Foundation
 import UIKit
 #endif
 
-/// Eilė, sesijos, saugojimas diske ir siuntimas. Visa būsena keičiama tik `queue` gijoje.
+/// Queue, sessions, disk persistence and sending. All state is mutated only on `queue`.
 final class Core: @unchecked Sendable {
-    /// Išsiunčia užklausą ir grąžina HTTP statusą (nil, jei tinklo klaida).
+    /// Sends the request and returns the HTTP status (nil on a network error).
     typealias Transport = (URLRequest, @escaping (Int?) -> Void) -> Void
 
     static let sdkVersion = "0.2.0"
@@ -29,7 +29,7 @@ final class Core: @unchecked Sendable {
     private var sessionId = ""
     private var lastActivity: Date?
     private var currentScreen = ""
-    /// Ar jau užfiksuotas pirmas aktyvavimas (paleidimas).
+    /// Whether the first activation (launch) has already been recorded.
     private var hasActivated = false
     private var sending = false
     private var persistScheduled = false
@@ -74,12 +74,12 @@ final class Core: @unchecked Sendable {
         observers.forEach { NotificationCenter.default.removeObserver($0) }
     }
 
-    // MARK: - Paleidimas
+    // MARK: - Startup
 
     func start() {
         queue.async { [weak self] in
             guard let self else { return }
-            self.persistNow() // kad įdiegimo ID išliktų net jei appsas iškart uždaromas
+            self.persistNow() // so the install ID survives even if the app is closed right away
 
             let timer = DispatchSource.makeTimerSource(queue: self.queue)
             timer.schedule(deadline: .now() + self.options.flushInterval, repeating: self.options.flushInterval)
@@ -87,7 +87,7 @@ final class Core: @unchecked Sendable {
             timer.resume()
             self.timer = timer
 
-            self.flushLocked() // išsiunčiam tai, kas liko nuo praeito karto
+            self.flushLocked() // send whatever is left from the previous run
         }
 
         #if canImport(UIKit) && !os(watchOS)
@@ -110,11 +110,11 @@ final class Core: @unchecked Sendable {
         #endif
     }
 
-    // MARK: - Atidarymai
+    // MARK: - App opens
 
-    /// `app_open` yra paleidimas arba grįžimas iš fono. `didBecomeActive` suveikia ir uždarius
-    /// sistemos langą (leidimai, Control Center), todėl jis skaičiuojamas tik pirmą kartą.
-    /// Paleidus fone (fono atsisiuntimas) ir vėliau atidarius, pirma ateina `willEnterForeground`.
+    /// `app_open` is a launch or a return from the background. `didBecomeActive` also fires after
+    /// a system dialog is dismissed (permissions, Control Center), so it only counts the first time.
+    /// When launched in the background (background fetch) and opened later, `willEnterForeground` comes first.
     func appDidBecomeActive() {
         let date = now()
         queue.async {
@@ -132,7 +132,7 @@ final class Core: @unchecked Sendable {
         }
     }
 
-    // MARK: - Įvykiai
+    // MARK: - Events
 
     func record(
         name: String,
@@ -140,13 +140,13 @@ final class Core: @unchecked Sendable {
         revenue: Revenue? = nil,
         setScreen: String? = nil
     ) {
-        let date = now() // laikas fiksuojamas kvietimo momentu, ne kai ateina eilė
+        let date = now() // timestamp is taken at call time, not when the queue gets to it
         queue.async {
             self.recordLocked(name: name, at: date, props: props, revenue: revenue, setScreen: setScreen)
         }
     }
 
-    /// Tik iš `queue`.
+    /// Only from `queue`.
     private func recordLocked(
         name: String, at date: Date, props: [String: MetricValue] = [:],
         revenue: Revenue? = nil, setScreen: String? = nil
@@ -171,7 +171,7 @@ final class Core: @unchecked Sendable {
         )
     }
 
-    /// Nauja sesija prasideda po `sessionTimeout` neveiklumo.
+    /// A new session starts after `sessionTimeout` of inactivity.
     private func touchSession(at date: Date) {
         if let last = lastActivity, !sessionId.isEmpty,
            date.timeIntervalSince(last) < options.sessionTimeout {
@@ -186,12 +186,12 @@ final class Core: @unchecked Sendable {
     private func append(_ event: Event) {
         state.queue.append(event)
         let overflow = state.queue.count - options.maxQueueSize
-        if overflow > 0 { state.queue.removeFirst(overflow) } // seniausi išmetami pirmi
+        if overflow > 0 { state.queue.removeFirst(overflow) } // oldest are dropped first
         schedulePersist()
         if state.queue.count >= options.flushAt { flushLocked() }
     }
 
-    // MARK: - Siuntimas
+    // MARK: - Sending
 
     func flush(force: Bool = false) {
         queue.async {
@@ -207,7 +207,7 @@ final class Core: @unchecked Sendable {
         let batch = Array(state.queue.prefix(options.batchSize))
         let ids = Set(batch.map(\.id))
         guard let body = try? JSONEncoder().encode(Batch(context: makeContext(), events: batch)) else {
-            state.queue.removeAll { ids.contains($0.id) } // neužkoduojamas paketas niekada nepavyks
+            state.queue.removeAll { ids.contains($0.id) } // a batch that cannot be encoded will never succeed
             return
         }
 
@@ -230,10 +230,10 @@ final class Core: @unchecked Sendable {
                     self.failures = 0
                     self.retryAfter = .distantPast
                     self.persistNow()
-                    self.flushLocked() // jei eilėje liko daugiau nei vienas paketas
+                    self.flushLocked() // in case more than one batch is queued
                 } else {
-                    // Tinklo ar serverio klaida: paliekam eilėje, laukiam ilgiau su kiekvienu bandymu.
-                    // Serveris dublikatus pašalina pagal įvykio id.
+                    // Network or server error: keep in the queue, wait longer after each attempt.
+                    // The server removes duplicates by event id.
                     self.failures += 1
                     let delay = min(3600, 30 * pow(2, Double(self.failures - 1)))
                     self.retryAfter = self.now().addingTimeInterval(delay)
@@ -242,7 +242,7 @@ final class Core: @unchecked Sendable {
         }
     }
 
-    // MARK: - Išjungimas
+    // MARK: - Opt-out
 
     func setEnabled(_ enabled: Bool) {
         queue.async {
@@ -254,7 +254,7 @@ final class Core: @unchecked Sendable {
 
     var isEnabled: Bool { queue.sync { state.enabled } }
 
-    // MARK: - Diskas
+    // MARK: - Disk
 
     private func schedulePersist() {
         guard !persistScheduled else { return }
@@ -270,17 +270,17 @@ final class Core: @unchecked Sendable {
             let directory = fileURL.deletingLastPathComponent()
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try JSONEncoder().encode(state).write(to: fileURL, options: .atomic)
-            // Neįtraukiam į atsarginę kopiją: atkūrus į naują įrenginį bus naujas įdiegimo ID
+            // Excluded from backups: restoring to a new device yields a new install ID
             var values = URLResourceValues()
             values.isExcludedFromBackup = true
             var url = fileURL
             try url.setResourceValues(values)
         } catch {
-            // Analitika niekada neturi nulaužti appso; kitą kartą bandysim vėl
+            // Analytics must never crash the app; we will try again next time
         }
     }
 
-    // MARK: - Kontekstas
+    // MARK: - Context
 
     private func makeContext() -> Context {
         let info = Bundle.main.infoDictionary
@@ -319,9 +319,9 @@ final class Core: @unchecked Sendable {
         }
     }()
 
-    // MARK: - Testams
+    // MARK: - For tests
 
-    /// Palaukia, kol eilėje esantys darbai bus atlikti.
+    /// Waits until queued work has finished.
     func drain() { queue.sync {} }
 
     var queuedEvents: [Event] { queue.sync { state.queue } }

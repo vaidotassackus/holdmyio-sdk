@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Sukompiliuoja release AAR su versija pavadinime: sdk-android/dist/holdmyio-<versija>.aar.
-# Versija imama iš Core.SDK_VERSION. Naudoti iš tago, pvz. git checkout 0.2.0 && sdk-android/build-aar.sh
+# Builds a release AAR with the version in its name: sdk-android/dist/holdmyio-<version>.aar.
+# The version is taken from Core.SDK_VERSION. Run from a tag, e.g. git checkout 0.2.0 && sdk-android/build-aar.sh
 set -euo pipefail
 cd "$(dirname "$0")"
 VERSION=$(sed -n 's/.*const val SDK_VERSION = "\(.*\)".*/\1/p' holdmyio/src/main/java/com/holdmyio/Core.kt)

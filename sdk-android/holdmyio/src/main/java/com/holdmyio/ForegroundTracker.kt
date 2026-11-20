@@ -1,10 +1,10 @@
 package com.holdmyio
 
 /**
- * Kada appsas tikrai atidaromas ir kada išeina į foną, pagal startuotų Activity skaičių.
- * Sistemos langai (leidimai) Activity nesustabdo, o ekrano pasukimas (`changingConfigurations`)
- * sustabdo ir iškart vėl startuoja tą patį ekraną: nė vienas iš jų nėra atidarymas.
- * Paleidimas fone (WorkManager, pranešimai) Activity nestartuoja ir atidarymu nelaikomas.
+ * When the app is really opened and when it goes to the background, based on the started Activity count.
+ * System dialogs (permissions) do not stop the Activity, and a rotation (`changingConfigurations`)
+ * stops and immediately restarts the same screen: neither of them counts as an open.
+ * A background launch (WorkManager, notifications) starts no Activity and is not counted as an open.
  */
 internal class ForegroundTracker(private val onOpen: () -> Unit, private val onBackground: () -> Unit) {
     private var started = 0

@@ -1,4 +1,4 @@
-// Web SDK testai su netikra naršykle (be priklausomybių). Paleidimas: node --test sdk-web/test/
+// Web SDK tests with a fake browser (no dependencies). Run: node --test sdk-web/test/
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -16,7 +16,7 @@ function memoryStorage() {
   };
 }
 
-/** Netikra naršyklė; grąžina window ir išsiųstus kūnus. */
+/** Fake browser; returns window and the sent bodies. */
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 function browser({ href = "https://liffer.com/pricing?utm_source=news&email=x@y.lt#top", referrer = "https://www.google.com/search?q=liffer", attrs = {}, webdriver = false, ua = "Mozilla/5.0 (Macintosh) Firefox/140" } = {}) {
@@ -39,7 +39,7 @@ function browser({ href = "https://liffer.com/pricing?utm_source=news&email=x@y.
     document: { currentScript: script, referrer, visibilityState: "visible", addEventListener: () => {} },
     localStorage: memoryStorage(),
     sessionStorage: memoryStorage(),
-    // Kaip tikras: SDK pirma įsimena laikmatį, o funkcija paleidžiama vėliau (čia iškart po to).
+    // Like the real one: the SDK stores the timer first and the function runs later (here, right after).
     setTimeout: (fn) => { queueMicrotask(fn); return 1; },
     addEventListener: (ev, fn) => { (listeners[ev] ||= []).push(fn); },
     fetch: (u, init) => { sent.push({ url: u, headers: init.headers, keepalive: init.keepalive, body: JSON.parse(init.body) }); return Promise.resolve({ ok: true }); },
@@ -52,7 +52,7 @@ function browser({ href = "https://liffer.com/pricing?utm_source=news&email=x@y.
 
 const ATTRS = { "data-key": "pk_live_web_0123456789abcdef" };
 
-test("be sutikimo: pirmas puslapis anonimiškai, nieko nesaugoma naršyklėje", async () => {
+test("without consent: first page is anonymous, nothing stored in the browser", async () => {
   const b = browser({ attrs: ATTRS });
   await tick();
   assert.equal(b.sent.length, 1);
@@ -69,13 +69,13 @@ test("be sutikimo: pirmas puslapis anonimiškai, nieko nesaugoma naršyklėje", 
   assert.equal(e.screen, "/pricing");
   assert.equal(e.session_id, "");
   assert.deepEqual(e.props, { referrer: "www.google.com", utm_source: "news" });
-  assert.ok(!JSON.stringify(body).includes("x@y.lt"), "užklausos parametrai (išskyrus utm) nesiunčiami");
+  assert.ok(!JSON.stringify(body).includes("x@y.lt"), "query parameters (except utm) are not sent");
   assert.ok(!JSON.stringify(body).includes("#top"));
-  assert.equal(b.window.localStorage._map.size, 0, "localStorage nenaudojamas");
-  assert.equal(b.window.sessionStorage._map.size, 0, "sessionStorage nenaudojamas");
+  assert.equal(b.window.localStorage._map.size, 0, "localStorage is not used");
+  assert.equal(b.window.sessionStorage._map.size, 0, "sessionStorage is not used");
 });
 
-test("SPA: naujas kelias yra nauja peržiūra be referrer; tas pats kelias nekartojamas", async () => {
+test("SPA: a new path is a new view without referrer; the same path is not repeated", async () => {
   const b = browser({ attrs: ATTRS });
   b.window.history.pushState({}, "", "/library?tab=all");
   b.window.history.replaceState({}, "", "/library?tab=pro");
@@ -86,7 +86,7 @@ test("SPA: naujas kelias yra nauja peržiūra be referrer; tas pats kelias nekar
   assert.deepEqual(views[1].props, {});
 });
 
-test("sutikimas: nuolatinis ID ir sesija; atšaukus ištrinama ir vėl anonimiškai", async () => {
+test("consent: persistent ID and session; revoking deletes them and goes anonymous again", async () => {
   const b = browser({ attrs: ATTRS });
   await tick();
   b.window.HoldMyIO.consent(true);
@@ -111,7 +111,7 @@ test("sutikimas: nuolatinis ID ir sesija; atšaukus ištrinama ir vėl anonimiš
   assert.equal(after.session_id, "");
 });
 
-test("automatizuota naršyklė nieko nesiunčia; be data-key SDK neveikia", async () => {
+test("automated browser sends nothing; without data-key the SDK does nothing", async () => {
   const bot = browser({ attrs: ATTRS, webdriver: true });
   await tick();
   assert.equal(bot.sent.length, 0);
@@ -121,7 +121,7 @@ test("automatizuota naršyklė nieko nesiunčia; be data-key SDK neveikia", asyn
   assert.equal(none.sent.length, 0);
 });
 
-test("nustatymai: debug localhost'e, data-endpoint, data-pageviews=false, mobilus įrenginys", async () => {
+test("settings: debug on localhost, data-endpoint, data-pageviews=false, mobile device", async () => {
   const local = browser({ href: "http://localhost:5173/", attrs: ATTRS });
   await tick();
   assert.equal(local.sent[0].body.context.debug, true);

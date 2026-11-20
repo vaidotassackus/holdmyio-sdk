@@ -1,12 +1,12 @@
 /*! Hold My IO web SDK 0.3.0 | https://io.holdmy.company */
-// Įdėjimas:
+// Installation:
 //   <script src="https://io.holdmy.company/sdk/holdmyio.js" data-key="pk_live_..." defer></script>
-// Be sutikimo naršyklėje nesaugoma nieko: įvykiai siunčiami su `anonymous: true`, o serveris lankytoją
-// atpažįsta tik tą pačią dieną (hash su kasdien keičiamu salt). Lankytojui sutikus su statistika:
-//   HoldMyIO.consent(true)   // atsitiktinis ID localStorage: matosi grįžimai, retention, piltuvėliai
-//   HoldMyIO.consent(false)  // ID ištrinamas, vėl anoniminis režimas
-// Kiti įvykiai: HoldMyIO.track("signup", { plan: "pro" }). Puslapiai fiksuojami automatiškai,
-// taip pat SPA naršymas (history API). data-spa="false" išjungia, tada HoldMyIO.page() rankiniu būdu.
+// Without consent nothing is stored in the browser: events are sent with `anonymous: true`, and the server
+// recognizes a visitor only within the same day (hash with a daily rotating salt). Once the visitor consents to analytics:
+//   HoldMyIO.consent(true)   // random ID in localStorage: enables returning visits, retention, funnels
+//   HoldMyIO.consent(false)  // ID is deleted, back to anonymous mode
+// Other events: HoldMyIO.track("signup", { plan: "pro" }). Page views are recorded automatically,
+// including SPA navigation (history API). data-spa="false" turns that off; then call HoldMyIO.page() manually.
 (function (global) {
   "use strict";
   var VERSION = "0.3.0";
@@ -42,7 +42,7 @@
     try { return ls ? ls.getItem(ID_KEY) : null; } catch (e) { return null; }
   }
 
-  /** Sesija tik su sutikimu: sessionStorage, nauja po 30 min. neveiklumo. */
+  /** Session only with consent: sessionStorage, new after 30 min of inactivity. */
   function sessionId(now) {
     var ss = storage("sessionStorage");
     if (!ss) return "";
@@ -89,7 +89,7 @@
         headers: { "content-type": "application/json", "x-app-key": cfg.key },
         body: body,
       }).catch(function () {});
-    } catch (e) { /* analitika niekada nenulaužia puslapio */ }
+    } catch (e) { /* analytics never breaks the page */ }
     if (queue.length) send();
   }
 
@@ -122,7 +122,7 @@
     schedule();
   }
 
-  /** Puslapio peržiūra. Kelias be užklausos ir # (juose būna asmens duomenų). */
+  /** Page view. Path without query string and # (they may contain personal data). */
   function page(path) {
     var loc = global.location;
     var p = path || loc.pathname || "/";
@@ -146,7 +146,7 @@
     track("screen_view", props, p);
   }
 
-  /** Lankytojo sutikimas su statistika (pvz. iš cookie banerio). */
+  /** Visitor consent to analytics (e.g. from a cookie banner). */
   function consent(granted) {
     var ls = storage("localStorage"), ss = storage("sessionStorage");
     try {
@@ -194,7 +194,7 @@
   var api = { init: init, page: page, track: track, consent: consent, flush: send, version: VERSION };
   global.HoldMyIO = api;
 
-  // Automatinis paleidimas iš <script data-key=...>
+  // Automatic startup from <script data-key=...>
   var script = doc.currentScript;
   if (script && script.getAttribute("data-key")) {
     var src = script.getAttribute("src") || "";

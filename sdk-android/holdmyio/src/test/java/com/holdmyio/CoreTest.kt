@@ -105,7 +105,7 @@ class CoreTest {
         core.drain(); core.drain()
         core.flush()
         core.drain(); core.drain()
-        assertEquals("antras bandymas laukia backoff", 1, network.bodies.size)
+        assertEquals("second attempt waits for backoff", 1, network.bodies.size)
         core.flush(force = true)
         core.drain(); core.drain()
         assertEquals(2, network.bodies.size)
@@ -129,7 +129,7 @@ class CoreTest {
         core.record("screen_view", setScreen = "library")
         core.record("paywall_viewed", mapOf("reason" to "pack"))
         core.drain()
-        // Kaip Swift SDK: ekranas nustatomas prieš sesijos pradžią, tad ir session_start jį turi.
+        // Like the Swift SDK: the screen is set before the session starts, so session_start has it too.
         assertEquals(listOf("session_start", "screen_view", "paywall_viewed"), core.queuedEvents.map { it.name })
         assertEquals(listOf("library", "library", "library"), core.queuedEvents.map { it.screen })
     }
@@ -177,18 +177,18 @@ class ForegroundTrackerTest {
         var backgrounds = 0
         val tracker = ForegroundTracker({ opens++ }, { backgrounds++ })
 
-        tracker.activityStarted()                         // paleidimas
-        tracker.activityStopped(isChangingConfigurations = true)  // pasukimas
+        tracker.activityStarted()                         // launch
+        tracker.activityStopped(isChangingConfigurations = true)  // rotation
         tracker.activityStarted()
         assertEquals(1, opens)
 
-        tracker.activityStarted()                         // antras ekranas (pvz. pirkimo langas) virš pirmo
+        tracker.activityStarted()                         // second screen (e.g. purchase screen) on top of the first
         tracker.activityStopped(false)
         assertEquals(0, backgrounds)
 
-        tracker.activityStopped(false)                    // į foną
+        tracker.activityStopped(false)                    // to background
         assertEquals(1, backgrounds)
-        tracker.activityStarted()                         // grįžo
+        tracker.activityStarted()                         // returned
         assertEquals(2, opens)
     }
 }

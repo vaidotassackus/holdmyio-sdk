@@ -12,34 +12,34 @@ import java.net.URL
 import java.util.Locale
 
 /**
- * Viešas SDK API (tas pats kaip Swift SDK).
+ * Public SDK API (same as the Swift SDK).
  *
  *     HoldMyIO.configure(application, appKey = "pk_live_...", endpoint = "https://io.holdmy.company")
  *     HoldMyIO.screen("editor")
  *     HoldMyIO.track("export_done", mapOf("format" to "reel", "seconds" to 42))
  *
- * Automatiškai siunčiami `session_start` ir `app_open`. Įvykiai kaupiami diske ir siunčiami
- * paketais, todėl veikia ir be interneto. Klaidos nuryjamos: analitika niekada nenulaužia appso.
+ * `session_start` and `app_open` are sent automatically. Events are stored on disk and sent
+ * in batches, so it works offline too. Errors are swallowed: analytics never crashes the app.
  */
 object HoldMyIO {
     data class Options(
-        /** Kas kiek milisekundžių bandoma išsiųsti eilę. */
+        /** How often (in milliseconds) to try sending the queue. */
         val flushIntervalMs: Long = 30_000,
-        /** Eilėje susikaupus tiek įvykių, siunčiama iškart. */
+        /** Once this many events are queued, they are sent immediately. */
         val flushAt: Int = 20,
-        /** Įvykių skaičius viename pakete (serveris priima iki 100). */
+        /** Number of events per batch (the server accepts up to 100). */
         val batchSize: Int = 50,
-        /** Daugiausia įvykių, laikomų diske be interneto. */
+        /** Maximum number of events kept on disk while offline. */
         val maxQueueSize: Int = 1000,
-        /** Po tiek milisekundžių neveiklumo pradedama nauja sesija. */
+        /** A new session starts after this many milliseconds of inactivity. */
         val sessionTimeoutMs: Long = 30 * 60 * 1000,
-        /** Debug buildų įvykiai pažymimi ir į statistiką neįtraukiami. null: pagal appso debuggable vėliavą. */
+        /** Events from debug builds are flagged and excluded from statistics. null: use the app's debuggable flag. */
         val debug: Boolean? = null,
     )
 
     @Volatile private var core: Core? = null
 
-    /** Kviesk vieną kartą `Application.onCreate()`, prieš kitus kvietimus. */
+    /** Call once in `Application.onCreate()`, before any other calls. */
     @JvmStatic
     @JvmOverloads
     fun configure(application: Application, appKey: String, endpoint: String, options: Options = Options()) {
@@ -54,26 +54,26 @@ object HoldMyIO {
                 created.start()
                 observeForeground(application, created)
             } catch (_: Throwable) {
-                // Analitika niekada neturi nulaužti appso
+                // Analytics must never crash the app
             }
         }
     }
 
-    /** Bet koks įvykis. Pavadinimas: raidės, skaičiai, `_` ir `.`, iki 64 simbolių. Reikšmės: tekstas, skaičius, bool. */
+    /** Any event. Name: letters, digits, `_` and `.`, up to 64 characters. Values: string, number, bool. */
     @JvmStatic
     @JvmOverloads
     fun track(name: String, props: Map<String, Any?> = emptyMap()) {
         core?.record(name, cleanProps(props))
     }
 
-    /** Ekrano peržiūra. Vėlesni įvykiai priskiriami šiam ekranui, kol nepakviesi su kitu. */
+    /** A screen view. Later events are attributed to this screen until you call it with another. */
     @JvmStatic
     @JvmOverloads
     fun screen(name: String, props: Map<String, Any?> = emptyMap()) {
         core?.record("screen_view", cleanProps(props), setScreen = name)
     }
 
-    /** Pirkimas. `price` yra sumokėta kaina, `currency` ISO 4217 kodas, pvz. "EUR". */
+    /** A purchase. `price` is the price paid, `currency` an ISO 4217 code, e.g. "EUR". */
     @JvmStatic
     @JvmOverloads
     fun purchase(productId: String, price: Double, currency: String, props: Map<String, Any?> = emptyMap()) {
@@ -81,13 +81,13 @@ object HoldMyIO {
         core?.record("purchase", cleanProps(props), Revenue(price, currency.uppercase(Locale.ROOT), productId))
     }
 
-    /** Išsiunčia eilę dabar, nelaukiant laikmačio. */
+    /** Sends the queue now, without waiting for the timer. */
     @JvmStatic
     fun flush() {
         core?.flush(force = true)
     }
 
-    /** Naudotojo atsisakymas: išjungus nieko nerenkama, o neišsiųsti įvykiai ištrinami. */
+    /** User opt-out: when disabled nothing is collected and unsent events are deleted. */
     @JvmStatic
     fun setEnabled(enabled: Boolean) {
         core?.setEnabled(enabled)

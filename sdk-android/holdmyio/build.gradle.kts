@@ -1,4 +1,4 @@
-// Hold My IO Android SDK. Jokių priklausomybių: tik Android API (HttpURLConnection, org.json).
+// Hold My IO Android SDK. No dependencies: Android APIs only (HttpURLConnection, org.json).
 plugins {
     id("com.android.library")
 }
@@ -24,6 +24,6 @@ android {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
-    // Android org.json JVM testuose yra tik stub'ai: tikra implementacija tik testams.
+    // Android's org.json is only stubs in JVM tests, so the real implementation is added for tests only.
     testImplementation("org.json:json:20240303")
 }
