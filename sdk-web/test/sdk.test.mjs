@@ -19,7 +19,7 @@ function memoryStorage() {
 /** Fake browser; returns window and the sent bodies. */
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
-function browser({ href = "https://liffer.com/pricing?utm_source=news&email=x@y.lt#top", referrer = "https://www.google.com/search?q=liffer", attrs = {}, webdriver = false, ua = "Mozilla/5.0 (Macintosh) Firefox/140" } = {}) {
+function browser({ href = "https://liffer.com/pricing?utm_source=news&email=x@y.lt#top", referrer = "https://www.google.com/search?q=liffer", attrs = {}, webdriver = false, ua = "Mozilla/5.0 (Macintosh) Firefox/140", lang = "" } = {}) {
   const sent = [];
   const listeners = {};
   const url = new URL(href);
@@ -36,7 +36,7 @@ function browser({ href = "https://liffer.com/pricing?utm_source=news&email=x@y.
     location, history, URL, URLSearchParams, JSON, Date, Math, Uint8Array, Array, isFinite, String,
     crypto: globalThis.crypto,
     navigator: { userAgent: ua, language: "lt-LT", webdriver },
-    document: { currentScript: script, referrer, visibilityState: "visible", addEventListener: () => {} },
+    document: { currentScript: script, referrer, visibilityState: "visible", addEventListener: () => {}, documentElement: { lang } },
     localStorage: memoryStorage(),
     sessionStorage: memoryStorage(),
     // Like the real one: the SDK stores the timer first and the function runs later (here, right after).
@@ -115,6 +115,10 @@ test("automated browser sends nothing; without data-key the SDK does nothing", a
   const bot = browser({ attrs: ATTRS, webdriver: true });
   await tick();
   assert.equal(bot.sent.length, 0);
+  const googlebot = browser({ attrs: ATTRS, ua: "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Googlebot/2.1; +http://www.google.com/bot.html) Chrome/131.0.0.0 Safari/537.36" });
+  const headless = browser({ attrs: ATTRS, ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/131.0.0.0 Safari/537.36" });
+  await tick();
+  assert.equal(googlebot.sent.length + headless.sent.length, 0, "known bots send nothing");
   const none = browser({ attrs: {} });
   none.window.HoldMyIO.track("x");
   await tick();
@@ -134,4 +138,23 @@ test("settings: debug on localhost, data-endpoint, data-pageviews=false, mobile 
   assert.equal(custom.sent[0].body.context.device_model, "mobile");
   assert.equal(custom.sent[0].body.context.app_version, "2.1");
   assert.equal(custom.sent[0].body.context.debug, false);
+});
+
+test("page language, and the current path when no screen is given, through the app's path filter", async () => {
+  const b = browser({ href: "https://holdmylemonade.com/reset-password/abcdefghijklmnopqrstuvwxyz", attrs: { ...ATTRS, "data-pageviews": "false" }, lang: "lt" });
+  b.window.HoldMyIO.setPathFilter((p) => p.replace(/^\/reset-password\/[^/]+/, "/reset-password/:token"));
+  b.window.HoldMyIO.track("client_asset_stale_reload");
+  b.window.HoldMyIO.page();
+  await tick();
+  const [stale, view] = b.events();
+  assert.equal(stale.screen, "/reset-password/:token");
+  assert.equal(view.screen, "/reset-password/:token");
+  assert.equal(stale.context.page_lang, "lt");
+  assert.equal(stale.context.locale, "lt-LT");
+  assert.ok(!JSON.stringify(b.sent).includes("abcdefghij"));
+  // A broken filter falls back to the raw path and never throws into the page
+  b.window.HoldMyIO.setPathFilter(() => { throw new Error("x"); });
+  b.window.history.pushState({}, "", "/learn/how-to-save");
+  await tick();
+  assert.equal(b.events().at(-1).screen, "/learn/how-to-save");
 });

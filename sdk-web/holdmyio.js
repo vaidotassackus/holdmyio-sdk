@@ -1,4 +1,4 @@
-/*! Hold My IO web SDK 0.3.0 | https://io.holdmy.company */
+/*! Hold My IO web SDK 0.4.0 | https://io.holdmy.company */
 // Installation:
 //   <script src="https://io.holdmy.company/sdk/holdmyio.js" data-key="pk_live_..." defer></script>
 // Without consent nothing is stored in the browser: events are sent with `anonymous: true`, and the server
@@ -7,9 +7,11 @@
 //   HoldMyIO.consent(false)  // ID is deleted, back to anonymous mode
 // Other events: HoldMyIO.track("signup", { plan: "pro" }). Page views are recorded automatically,
 // including SPA navigation (history API). data-spa="false" turns that off; then call HoldMyIO.page() manually.
+// Paths with secrets in them (reset links, invites): HoldMyIO.setPathFilter(function (path) { return ...; })
+// cleans every path the SDK reads from location itself. Known bots and automated browsers send nothing.
 (function (global) {
   "use strict";
-  var VERSION = "0.3.0";
+  var VERSION = "0.4.0";
   var ID_KEY = "holdmyio_id";
   var SESSION_KEY = "holdmyio_session";
   var SESSION_TIMEOUT = 30 * 60 * 1000;
@@ -22,6 +24,9 @@
   var currentScreen = "";
   var lastPath = null;
   var firstPage = true;
+  var pathFilter = null;
+  // Search engine, SEO and AI crawlers that run JavaScript; the server checks the same list again.
+  var BOT_RE = /bot\/|bot;|crawler|spider|crawling|headlesschrome|lighthouse|phantomjs|puppeteer|playwright|selenium|google-inspectiontool|googleother|bingpreview|facebookexternalhit|meta-externalagent|anthropic-ai|claude-web|chatgpt-user|perplexity-user|bytespider|ptst\//i;
 
   function uuid() {
     if (global.crypto && global.crypto.randomUUID) return global.crypto.randomUUID();
@@ -70,6 +75,7 @@
       app_version: cfg.version || "",
       device_model: deviceType(),
       locale: (nav.language || "").slice(0, 16),
+      page_lang: ((doc.documentElement && doc.documentElement.lang) || "").slice(0, 16),
       sdk_version: VERSION,
       debug: !!cfg.debug,
     };
@@ -107,10 +113,21 @@
     return out;
   }
 
+  /** The current path from location, through the app's filter if it set one. */
+  function locationPath() {
+    var p = (global.location && global.location.pathname) || "/";
+    if (pathFilter) {
+      try { p = String(pathFilter(p) || "/"); } catch (e) { /* a broken filter never breaks the page */ }
+    }
+    return p;
+  }
+
   function track(name, props, screen) {
     if (!cfg || cfg.disabled) return;
     var now = Date.now();
-    if (screen !== undefined) currentScreen = screen;
+    if (screen) currentScreen = String(screen);
+    // No page yet (pageviews off, event before the first page() call): the screen is the current path.
+    if (!currentScreen) currentScreen = locationPath();
     queue.push({
       id: uuid(),
       name: String(name).slice(0, 64),
@@ -125,7 +142,7 @@
   /** Page view. Path without query string and # (they may contain personal data). */
   function page(path) {
     var loc = global.location;
-    var p = path || loc.pathname || "/";
+    var p = path || locationPath();
     if (p === lastPath && !path) return;
     lastPath = p;
     var props = {};
@@ -177,13 +194,14 @@
     if (cfg) return;
     var o = options || {};
     if (!o.key) return;
+    if (o.pathFilter) setPathFilter(o.pathFilter);
     var host = (global.location && global.location.hostname) || "";
     cfg = {
       key: o.key,
       endpoint: (o.endpoint || "https://io.holdmy.company").replace(/\/+$/, ""),
       version: o.version || "",
       debug: o.debug != null ? !!o.debug : /^(localhost|127\.0\.0\.1|\[::1\])$|\.(local|test|localhost)$/.test(host),
-      disabled: !!nav.webdriver && !o.debug,
+      disabled: (!!nav.webdriver || BOT_RE.test(nav.userAgent || "")) && !o.debug,
     };
     global.addEventListener("pagehide", send);
     doc.addEventListener("visibilitychange", function () { if (doc.visibilityState === "hidden") send(); });
@@ -191,7 +209,12 @@
     if (o.pageviews !== false) page();
   }
 
-  var api = { init: init, page: page, track: track, consent: consent, flush: send, version: VERSION };
+  /** Function that cleans a path read from location, e.g. /reset-password/abc -> /reset-password/:token. */
+  function setPathFilter(fn) {
+    pathFilter = typeof fn === "function" ? fn : null;
+  }
+
+  var api = { init: init, page: page, track: track, consent: consent, flush: send, setPathFilter: setPathFilter, version: VERSION };
   global.HoldMyIO = api;
 
   // Automatic startup from <script data-key=...>

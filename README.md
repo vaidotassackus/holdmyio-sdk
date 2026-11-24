@@ -10,7 +10,7 @@ Full documentation: **https://io.holdmy.company/docs**
 
 ## iOS (Swift Package Manager)
 
-iOS 15+. In Xcode: File, Add Package Dependencies, `https://github.com/vaidotassackus/holdmyio-sdk`, product `HoldMyIO`.
+iOS 15+. In Xcode: File, Add Package Dependencies, `https://github.com/vaidotassackus/holdmyio-sdk`, version 0.2.1 or later, product `HoldMyIO`.
 
 ```swift
 import HoldMyIO
@@ -24,11 +24,11 @@ HoldMyIO.setEnabled(false) // opt-out: nothing is collected, unsent events are d
 
 ## Android
 
-minSdk 24. Download the AAR from https://io.holdmy.company/sdk/holdmyio-android-0.2.0.aar into `app/libs/`
+minSdk 24. Download the AAR from https://io.holdmy.company/sdk/holdmyio-android-0.2.1.aar into `app/libs/`
 (or build it with `sdk-android/build-aar.sh`):
 
 ```kotlin
-dependencies { implementation(files("libs/holdmyio-android-0.2.0.aar")) }
+dependencies { implementation(files("libs/holdmyio-android-0.2.1.aar")) }
 
 // Application.onCreate()
 HoldMyIO.configure(this, appKey = "pk_live_…", endpoint = "https://io.holdmy.company")
