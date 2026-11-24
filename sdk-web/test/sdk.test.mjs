@@ -19,9 +19,10 @@ function memoryStorage() {
 /** Fake browser; returns window and the sent bodies. */
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
-function browser({ href = "https://liffer.com/pricing?utm_source=news&email=x@y.lt#top", referrer = "https://www.google.com/search?q=liffer", attrs = {}, webdriver = false, ua = "Mozilla/5.0 (Macintosh) Firefox/140", lang = "" } = {}) {
+function browser({ href = "https://liffer.com/pricing?utm_source=news&email=x@y.lt#top", referrer = "https://www.google.com/search?q=liffer", attrs = {}, webdriver = false, ua = "Mozilla/5.0 (Macintosh) Firefox/140", lang = "", clock = null } = {}) {
   const sent = [];
   const listeners = {};
+  const docListeners = {};
   const url = new URL(href);
   const location = { href: url.href, pathname: url.pathname, search: url.search, host: url.host, hostname: url.hostname };
   const script = {
@@ -33,10 +34,10 @@ function browser({ href = "https://liffer.com/pricing?utm_source=news&email=x@y.
     replaceState(_s, _t, u) { const next = new URL(u, location.href); location.pathname = next.pathname; location.search = next.search; },
   };
   const window = {
-    location, history, URL, URLSearchParams, JSON, Date, Math, Uint8Array, Array, isFinite, String,
+    location, history, URL, URLSearchParams, JSON, Date: clock ? { now: () => clock.t } : Date, Math, Uint8Array, Array, isFinite, String,
     crypto: globalThis.crypto,
     navigator: { userAgent: ua, language: "lt-LT", webdriver },
-    document: { currentScript: script, referrer, visibilityState: "visible", addEventListener: () => {}, documentElement: { lang } },
+    document: { currentScript: script, referrer, visibilityState: "visible", addEventListener: (ev, fn) => { (docListeners[ev] ||= []).push(fn); }, documentElement: { lang } },
     localStorage: memoryStorage(),
     sessionStorage: memoryStorage(),
     // Like the real one: the SDK stores the timer first and the function runs later (here, right after).
@@ -47,7 +48,8 @@ function browser({ href = "https://liffer.com/pricing?utm_source=news&email=x@y.
   window.window = window;
   vm.runInNewContext(SOURCE, window);
   const events = () => sent.flatMap((s) => s.body.events.map((e) => ({ ...e, context: s.body.context })));
-  return { window, sent, events, emit: (ev) => (listeners[ev] || []).forEach((f) => f()) };
+  const visibility = (state) => { window.document.visibilityState = state; (docListeners.visibilitychange || []).forEach((f) => f()); };
+  return { window, sent, events, emit: (ev) => (listeners[ev] || []).forEach((f) => f()), visibility };
 }
 
 const ATTRS = { "data-key": "pk_live_web_0123456789abcdef" };
@@ -157,4 +159,21 @@ test("page language, and the current path when no screen is given, through the a
   b.window.history.pushState({}, "", "/learn/how-to-save");
   await tick();
   assert.equal(b.events().at(-1).screen, "/learn/how-to-save");
+});
+
+test("engagement: visible time is sent as ms when the page is hidden; a quick flick is not counted", async () => {
+  const clock = { t: 1_800_000_000_000 };
+  const b = browser({ attrs: ATTRS, clock });
+  clock.t += 45_000;
+  b.visibility("hidden");
+  b.visibility("hidden"); // already hidden: nothing more
+  b.emit("pagehide");
+  clock.t += 600_000;
+  b.visibility("visible");
+  clock.t += 300;
+  b.visibility("hidden");
+  await tick();
+  const engagement = b.events().filter((e) => e.name === "engagement");
+  assert.deepEqual(engagement.map((e) => e.props.ms), [45_000]);
+  assert.equal(engagement[0].screen, "/pricing");
 });

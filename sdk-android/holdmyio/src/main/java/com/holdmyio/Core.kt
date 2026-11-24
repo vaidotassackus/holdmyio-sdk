@@ -32,7 +32,9 @@ internal class Core(
     },
 ) {
     companion object {
-        const val SDK_VERSION = "0.2.2"
+        const val SDK_VERSION = "0.3.0"
+        /** Longest stretch counted as one foreground visit (a phone left on with the app open). */
+        const val MAX_ENGAGEMENT_MS = 4L * 60 * 60 * 1000
     }
 
     private var state: PersistedState = load()
@@ -44,6 +46,8 @@ internal class Core(
     private var failures = 0
     private var retryAfter = 0L
     private var timer: ScheduledFuture<*>? = null
+    /** When the app last came to the foreground; 0 while in the background. */
+    private var foregroundSince = 0L
 
     private fun load(): PersistedState =
         runCatching { PersistedState.fromJson(stateFile.readText()) }.getOrNull()
@@ -70,6 +74,33 @@ internal class Core(
             touchSession(at)
             append(makeEvent(name, at, props, revenue))
         }
+    }
+
+    /** The app came to the foreground (launch or return): `app_open`, and the foreground time starts. */
+    fun appOpened() {
+        val at = now()
+        async { foregroundSince = at }
+        record("app_open")
+    }
+
+    /**
+     * The app went to the background: `engagement` with the time spent in the foreground (`ms`), then send.
+     * Shorter than a second is not counted.
+     */
+    fun appBackgrounded() {
+        val at = now()
+        async {
+            val since = foregroundSince
+            foregroundSince = 0
+            if (since > 0 && state.enabled) {
+                val ms = minOf(at - since, MAX_ENGAGEMENT_MS)
+                if (ms >= 1000) {
+                    touchSession(at)
+                    append(makeEvent("engagement", at, mapOf("ms" to ms)))
+                }
+            }
+        }
+        flush(force = true)
     }
 
     private fun makeEvent(name: String, at: Long, props: Map<String, Any> = emptyMap(), revenue: Revenue? = null) =

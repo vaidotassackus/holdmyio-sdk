@@ -1,4 +1,4 @@
-/*! Hold My IO web SDK 0.4.0 | https://io.holdmy.company */
+/*! Hold My IO web SDK 0.5.0 | https://io.holdmy.company */
 // Installation:
 //   <script src="https://io.holdmy.company/sdk/holdmyio.js" data-key="pk_live_..." defer></script>
 // Without consent nothing is stored in the browser: events are sent with `anonymous: true`, and the server
@@ -11,7 +11,7 @@
 // cleans every path the SDK reads from location itself. Known bots and automated browsers send nothing.
 (function (global) {
   "use strict";
-  var VERSION = "0.4.0";
+  var VERSION = "0.5.0";
   var ID_KEY = "holdmyio_id";
   var SESSION_KEY = "holdmyio_session";
   var SESSION_TIMEOUT = 30 * 60 * 1000;
@@ -25,6 +25,8 @@
   var lastPath = null;
   var firstPage = true;
   var pathFilter = null;
+  var visibleSince = null;
+  var MAX_ENGAGEMENT = 4 * 60 * 60 * 1000;
   // Search engine, SEO and AI crawlers that run JavaScript; the server checks the same list again.
   var BOT_RE = /bot\/|bot;|crawler|spider|crawling|headlesschrome|lighthouse|phantomjs|puppeteer|playwright|selenium|google-inspectiontool|googleother|bingpreview|facebookexternalhit|meta-externalagent|anthropic-ai|claude-web|chatgpt-user|perplexity-user|bytespider|ptst\//i;
 
@@ -111,6 +113,14 @@
       if (typeof v === "string" || typeof v === "boolean" || (typeof v === "number" && isFinite(v))) out[k] = v;
     }
     return out;
+  }
+
+  /** Visible time since the page was last shown; under a second (a quick tab flick) is not counted. */
+  function engaged() {
+    if (visibleSince === null) return;
+    var ms = Math.min(Date.now() - visibleSince, MAX_ENGAGEMENT);
+    visibleSince = null;
+    if (ms >= 1000) track("engagement", { ms: ms });
   }
 
   /** The current path from location, through the app's filter if it set one. */
@@ -203,8 +213,13 @@
       debug: o.debug != null ? !!o.debug : /^(localhost|127\.0\.0\.1|\[::1\])$|\.(local|test|localhost)$/.test(host),
       disabled: (!!nav.webdriver || BOT_RE.test(nav.userAgent || "")) && !o.debug,
     };
-    global.addEventListener("pagehide", send);
-    doc.addEventListener("visibilitychange", function () { if (doc.visibilityState === "hidden") send(); });
+    // Engagement: the time the page was visible, sent as `engagement` (ms) when it is hidden or closed
+    if (doc.visibilityState !== "hidden") visibleSince = Date.now();
+    global.addEventListener("pagehide", function () { engaged(); send(); });
+    doc.addEventListener("visibilitychange", function () {
+      if (doc.visibilityState === "hidden") { engaged(); send(); }
+      else if (visibleSince === null) visibleSince = Date.now();
+    });
     if (o.spa !== false) watchHistory();
     if (o.pageviews !== false) page();
   }

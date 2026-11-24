@@ -124,6 +124,26 @@ class CoreTest {
         assertNotEquals(events[1].sessionId, events[3].sessionId)
     }
 
+    @Test fun engagementIsForegroundTimeSentOnBackground() {
+        val core = makeCore(FakeNetwork(status = null), HoldMyIO.Options(flushAt = 100, flushIntervalMs = 3_600_000))
+        core.appOpened()
+        core.drain()
+        clock += 60_000
+        core.appBackgrounded()
+        core.drain()
+        core.appBackgrounded() // already in the background: nothing more
+        core.drain()
+        clock += 600_000
+        core.appOpened()
+        core.drain()
+        clock += 400
+        core.appBackgrounded() // under a second: not counted
+        core.drain()
+        val engagement = core.queuedEvents.filter { it.name == "engagement" }
+        assertEquals(listOf(60_000L), engagement.map { it.props["ms"] })
+        assertEquals(2, core.queuedEvents.count { it.name == "app_open" })
+    }
+
     @Test fun screenIsAttachedToLaterEvents() {
         val core = makeCore(FakeNetwork(status = null), HoldMyIO.Options(flushAt = 100, flushIntervalMs = 3_600_000))
         core.record("screen_view", setScreen = "library")

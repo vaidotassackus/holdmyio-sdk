@@ -147,6 +147,31 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(core.queuedEvents.map(\.name).filter { $0 == "app_open" }.count, 1)
     }
 
+    func testEngagementIsForegroundTimeSentOnBackground() {
+        var clock = Date(timeIntervalSince1970: 1_800_000_000)
+        let network = FakeNetwork()
+        network.status = nil                      // keep events queued so the test can read them
+        let core = makeCore(network, now: { clock })
+        core.appDidBecomeActive()                 // launch
+        core.drain()
+        clock.addTimeInterval(42)
+        core.appDidBecomeActive()                 // a dialog closed: the visit keeps its start
+        core.drain()
+        clock.addTimeInterval(18)
+        core.appDidEnterBackground()              // 60 s in the foreground
+        core.drain()
+        core.appDidEnterBackground()              // already in the background: nothing more
+        core.drain()
+        clock.addTimeInterval(600)
+        core.appWillEnterForeground()
+        core.drain()
+        clock.addTimeInterval(0.4)
+        core.appDidEnterBackground()              // under a second: not counted
+        core.drain()
+        let engagement = core.queuedEvents.filter { $0.name == "engagement" }
+        XCTAssertEqual(engagement.map(\.props), [["ms": .int(60_000)]])
+    }
+
     func testDisabledCollectsNothing() {
         let network = FakeNetwork()
         let core = makeCore(network)

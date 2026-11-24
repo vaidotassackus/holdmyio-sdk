@@ -100,8 +100,8 @@ object HoldMyIO {
 
     private fun observeForeground(application: Application, core: Core) {
         val tracker = ForegroundTracker(
-            onOpen = { core.record("app_open") },
-            onBackground = { core.flush(force = true) },
+            onOpen = { core.appOpened() },
+            onBackground = { core.appBackgrounded() },
         )
         application.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
             override fun onActivityStarted(activity: Activity) = tracker.activityStarted()

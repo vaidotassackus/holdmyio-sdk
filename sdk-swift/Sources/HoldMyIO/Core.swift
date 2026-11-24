@@ -8,7 +8,7 @@ final class Core: @unchecked Sendable {
     /// Sends the request and returns the HTTP status (nil on a network error).
     typealias Transport = (URLRequest, @escaping (Int?) -> Void) -> Void
 
-    static let sdkVersion = "0.2.2"
+    static let sdkVersion = "0.3.0"
 
     private static let session = URLSession(configuration: .ephemeral)
     static let defaultTransport: Transport = { request, done in
@@ -31,6 +31,10 @@ final class Core: @unchecked Sendable {
     private var currentScreen = ""
     /// Whether the first activation (launch) has already been recorded.
     private var hasActivated = false
+    /// When the app last came to the foreground; nil while in the background.
+    private var foregroundSince: Date?
+    /// Longest stretch counted as one foreground visit (a phone left on with the app open).
+    static let maxEngagement: TimeInterval = 4 * 60 * 60
     private var sending = false
     private var persistScheduled = false
     private var failures = 0
@@ -105,7 +109,7 @@ final class Core: @unchecked Sendable {
         observers.append(center.addObserver(
             forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: nil
         ) { [weak self] _ in
-            self?.flush(force: true)
+            self?.appDidEnterBackground()
         })
         #endif
     }
@@ -118,6 +122,7 @@ final class Core: @unchecked Sendable {
     func appDidBecomeActive() {
         let date = now()
         queue.async {
+            if self.foregroundSince == nil { self.foregroundSince = date }
             guard !self.hasActivated else { return }
             self.hasActivated = true
             self.recordLocked(name: "app_open", at: date)
@@ -127,9 +132,26 @@ final class Core: @unchecked Sendable {
     func appWillEnterForeground() {
         let date = now()
         queue.async {
+            self.foregroundSince = date
             self.hasActivated = true
             self.recordLocked(name: "app_open", at: date)
         }
+    }
+
+    /// Going to the background: `engagement` with the time spent in the foreground (`ms`), then send.
+    /// Shorter than a second (a flicker through the app switcher) is not counted.
+    func appDidEnterBackground() {
+        let date = now()
+        queue.async {
+            if let since = self.foregroundSince {
+                let seconds = min(date.timeIntervalSince(since), Core.maxEngagement)
+                if seconds >= 1 {
+                    self.recordLocked(name: "engagement", at: date, props: ["ms": .int(Int((seconds * 1000).rounded()))])
+                }
+            }
+            self.foregroundSince = nil
+        }
+        flush(force: true)
     }
 
     // MARK: - Events
