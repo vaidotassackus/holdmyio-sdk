@@ -10,7 +10,7 @@ Full documentation: **https://io.holdmy.company/docs**
 
 ## iOS (Swift Package Manager)
 
-iOS 15+. In Xcode: File, Add Package Dependencies, `https://github.com/vaidotassackus/holdmyio-sdk`, version 0.2.1 or later, product `HoldMyIO`.
+iOS 15+. In Xcode: File, Add Package Dependencies, `https://github.com/vaidotassackus/holdmyio-sdk`, version 0.2.2 or later, product `HoldMyIO`.
 
 ```swift
 import HoldMyIO
@@ -24,16 +24,28 @@ HoldMyIO.setEnabled(false) // opt-out: nothing is collected, unsent events are d
 
 ## Android
 
-minSdk 24. Download the AAR from https://io.holdmy.company/sdk/holdmyio-android-0.2.1.aar into `app/libs/`
-(or build it with `sdk-android/build-aar.sh`):
+minSdk 24. Add JitPack to `settings.gradle.kts` and the dependency to `app/build.gradle.kts`:
 
 ```kotlin
-dependencies { implementation(files("libs/holdmyio-android-0.2.1.aar")) }
+// settings.gradle.kts
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+        maven("https://jitpack.io")
+    }
+}
+
+// app/build.gradle.kts
+dependencies { implementation("com.github.vaidotassackus:holdmyio-sdk:0.2.2") }
 
 // Application.onCreate()
 HoldMyIO.configure(this, appKey = "pk_live_…", endpoint = "https://io.holdmy.company")
 HoldMyIO.track("video_exported", mapOf("mode" to "montage"))
 ```
+
+Without JitPack: download https://io.holdmy.company/sdk/holdmyio-android-0.2.2.aar into `app/libs/` and use
+`implementation(files("libs/holdmyio-android-0.2.2.aar"))` (or build it with `sdk-android/build-aar.sh`).
 
 ## Web
 

@@ -8,7 +8,7 @@ final class Core: @unchecked Sendable {
     /// Sends the request and returns the HTTP status (nil on a network error).
     typealias Transport = (URLRequest, @escaping (Int?) -> Void) -> Void
 
-    static let sdkVersion = "0.2.1"
+    static let sdkVersion = "0.2.2"
 
     private static let session = URLSession(configuration: .ephemeral)
     static let defaultTransport: Transport = { request, done in

@@ -1,0 +1,7 @@
+# JitPack builds the Android SDK from this repo's tags:
+#   repositories { maven("https://jitpack.io") }
+#   dependencies { implementation("com.github.vaidotassackus:holdmyio-sdk:<tag>") }
+jdk:
+  - openjdk17
+install:
+  - cd sdk-android && ./gradlew --no-daemon --console=plain :holdmyio:publishReleasePublicationToMavenLocal

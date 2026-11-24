@@ -32,7 +32,7 @@ internal class Core(
     },
 ) {
     companion object {
-        const val SDK_VERSION = "0.2.1"
+        const val SDK_VERSION = "0.2.2"
     }
 
     private var state: PersistedState = load()
